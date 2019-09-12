@@ -79,6 +79,11 @@ def run_compose(systest, branch, local, tag, force_rebuild, rm_all):
 
     commands_cleanup = ["docker-compose down -v"]
 
+    # some tests can failing due to small FP difference between results
+    # extend this dictionary upon checking the result validity
+    custom_tolerance = {"nutils-of", "0.001"}
+    base_tolerance = "1e-6"
+
     test_path = os.path.join(os.getcwd(), 'tests', test_dirname)
     with common.chdir(test_path):
 
@@ -92,13 +97,14 @@ def run_compose(systest, branch, local, tag, force_rebuild, rm_all):
             #compare results
             path_to_ref = os.path.join(os.getcwd(), "referenceOutput")
             path_to_otp = os.path.join(os.getcwd(), "Output")
-            comparison(path_to_ref, path_to_otp)
+            comparison(path_to_ref, path_to_otp, base_tolerance if not
+                test_basename in custom_tolerance.keys() else custom_tolerance[test_basename])
 
             if rm_all:
                 for command in commands_cleanup:
                     ccall(command)
 
-        except (CalledProcessError, IncorrectOutput)  as e: 
+        except (CalledProcessError, IncorrectOutput)  as e:
             # cleanup in either case
             if rm_all:
                 for command in commands_cleanup:
@@ -124,8 +130,7 @@ class IncorrectOutput(Exception):
         return s
 
 
-
-def comparison(pathToRef, pathToOutput):
+def comparison(pathToRef, pathToOutput, tolerance = 0.001):
     """Compares two directories
 
     Args:
@@ -138,7 +143,8 @@ def comparison(pathToRef, pathToOutput):
     ret = common.get_diff_files(filecmp.dircmp(pathToRef, pathToOutput, ignore = [".gitkeep"]))
     if ret[0] or ret[1] or ret[2]:
         # check the results numerically now
-        num_diff = call("bash ../compare_results.sh {} {}".format(pathToRef, pathToOutput))
+        num_diff = call("bash ../compare_results.sh --avg_diff={tol}\
+                --max_diff={tol} {ref} {out}".format(tol = tolerance, ref = pathToRef, otp = pathToOutput))
         if num_diff == 1:
             raise IncorrectOutput(*ret)
 
